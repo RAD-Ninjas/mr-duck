@@ -2,6 +2,8 @@
 
 Mr. Duck is an Android-only on-device AI companion demo forked from Google AI Edge Gallery. It runs a multimodal Gemma model locally, shows a rubber-duck avatar, records push-to-talk audio, samples front-camera context without showing a preview, and replies as a small companion.
 
+![Mr. Duck app screenshot](docs/mr-duck-screenshot.jpeg)
+
 ## Status
 
 This is a focused prototype, not the full Gallery app. Most Gallery screens, model browsing UX, notifications, Firebase startup hooks, and storefront links have been removed or hidden while the codebase is being trimmed.
