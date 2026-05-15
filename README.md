@@ -28,8 +28,32 @@ The Android project lives in `Android/src`.
 
 ```bash
 cd Android/src
-./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 ```
+
+If your shell does not already point at a compatible JDK, set `JAVA_HOME` before running Gradle:
+
+```bash
+cd Android/src
+JAVA_HOME="/tmp/opencode/jdk-21" ./gradlew :app:assembleRelease
+```
+
+The release APK is written to:
+
+```text
+Android/src/app/build/outputs/apk/release/app-release.apk
+```
+
+For a shareable copy to upload to a web host:
+
+```bash
+mkdir -p dist
+cp Android/src/app/build/outputs/apk/release/app-release.apk dist/mr-duck-release.apk
+```
+
+Note: the current Gradle release build is signed with the local debug keystore. That is installable for sideloading, but not a production signing identity. Configure a real release signing config before publishing through an app store or committing to long-term update compatibility.
+
+The APK bundles the app and duck graphics. The Gemma model is downloaded by the app on first run; no API key is required for the current public model URL. Android users still need to allow sideloading/installing unknown apps, and the first launch needs internet access plus about 2.6 GB of model storage.
 
 Run the companion-focused tests:
 
@@ -37,8 +61,6 @@ Run the companion-focused tests:
 cd Android/src
 ./gradlew :app:testDebugUnitTest --tests "com.google.ai.edge.gallery.customtasks.companion.*"
 ```
-
-If your shell does not already point at a compatible JDK, set `JAVA_HOME` before running Gradle.
 
 ## Key Files
 
