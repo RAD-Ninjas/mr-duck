@@ -52,6 +52,36 @@ private const val TAG = "AGLlmChatModelHelper"
 
 data class LlmModelInstance(val engine: Engine, var conversation: Conversation)
 
+data class LiteRtContentDebugPart(
+  val kind: String,
+  val width: Int = 0,
+  val height: Int = 0,
+  val bytes: Int = 0,
+  val chars: Int = 0,
+  val preview: String = "",
+) {
+  companion object {
+    fun image(width: Int, height: Int, bytes: Int) =
+      LiteRtContentDebugPart(kind = "image", width = width, height = height, bytes = bytes)
+
+    fun audio(bytes: Int) = LiteRtContentDebugPart(kind = "audio", bytes = bytes)
+
+    fun text(chars: Int, preview: String) =
+      LiteRtContentDebugPart(kind = "text", chars = chars, preview = preview)
+  }
+}
+
+fun liteRtContentDebugLog(parts: List<LiteRtContentDebugPart>): String =
+  "LiteRT sendMessageAsync payload: contentCount=${parts.size}; parts=" +
+    parts.joinToString(",") { part ->
+      when (part.kind) {
+        "image" -> "image(${part.width}x${part.height},pngBytes=${part.bytes})"
+        "audio" -> "audio(wavBytes=${part.bytes})"
+        "text" -> "text(chars=${part.chars},preview=\"${part.preview}\")"
+        else -> "${part.kind}(bytes=${part.bytes})"
+      }
+    }
+
 object LlmChatModelHelper : LlmModelHelper {
   // Indexed by model name.
   private val cleanUpListeners: MutableMap<String, CleanUpListener> = mutableMapOf()
@@ -299,16 +329,27 @@ object LlmChatModelHelper : LlmModelHelper {
     val conversation = instance.conversation
 
     val contents = mutableListOf<Content>()
+    val debugParts = mutableListOf<LiteRtContentDebugPart>()
     for (image in images) {
-      contents.add(Content.ImageBytes(image.toPngByteArray()))
+      val imageBytes = image.toPngByteArray()
+      contents.add(Content.ImageBytes(imageBytes))
+      debugParts.add(
+        LiteRtContentDebugPart.image(width = image.width, height = image.height, bytes = imageBytes.size)
+      )
     }
     for (audioClip in audioClips) {
       contents.add(Content.AudioBytes(audioClip))
+      debugParts.add(LiteRtContentDebugPart.audio(bytes = audioClip.size))
     }
     // add the text after image and audio for the accurate last token
     if (input.trim().isNotEmpty()) {
       contents.add(Content.Text(input))
+      debugParts.add(
+        LiteRtContentDebugPart.text(chars = input.length, preview = input.toLiteRtDebugPreview())
+      )
     }
+
+    Log.d(TAG, liteRtContentDebugLog(debugParts))
 
     conversation.sendMessageAsync(
       Contents.of(contents),
@@ -340,4 +381,6 @@ object LlmChatModelHelper : LlmModelHelper {
     this.compress(Bitmap.CompressFormat.PNG, 100, stream)
     return stream.toByteArray()
   }
+
+  private fun String.toLiteRtDebugPreview(): String = replace(Regex("\\s+"), " ").take(96)
 }

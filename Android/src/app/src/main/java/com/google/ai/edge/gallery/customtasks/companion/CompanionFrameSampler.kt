@@ -16,11 +16,22 @@
 
 package com.google.ai.edge.gallery.customtasks.companion
 
+const val COMPANION_FRAME_CAPTURE_DELAY_MS = 1000L
+
+fun <T> createCompanionFrameSampler(): CompanionFrameSampler<T> =
+  CompanionFrameSampler(
+    sampleEveryMs = COMPANION_FRAME_CAPTURE_DELAY_MS,
+    maxFrames = 1,
+    firstSampleDelayMs = COMPANION_FRAME_CAPTURE_DELAY_MS,
+  )
+
 class CompanionFrameSampler<T>(
   private val sampleEveryMs: Long,
   private val maxFrames: Int,
+  private val firstSampleDelayMs: Long = 0L,
 ) {
   private val sampledFrames = mutableListOf<T>()
+  private var startedMs: Long? = null
   private var lastSampleMs: Long? = null
 
   val frames: List<T>
@@ -28,6 +39,10 @@ class CompanionFrameSampler<T>(
 
   fun canSample(nowMs: Long = System.currentTimeMillis()): Boolean {
     if (sampledFrames.size >= maxFrames) {
+      return false
+    }
+    val startMs = startedMs
+    if (firstSampleDelayMs > 0L && (startMs == null || nowMs - startMs < firstSampleDelayMs)) {
       return false
     }
     val previousSampleMs = lastSampleMs
@@ -43,8 +58,14 @@ class CompanionFrameSampler<T>(
     return true
   }
 
+  fun start(nowMs: Long = System.currentTimeMillis()) {
+    clear()
+    startedMs = nowMs
+  }
+
   fun clear() {
     sampledFrames.clear()
+    startedMs = null
     lastSampleMs = null
   }
 }

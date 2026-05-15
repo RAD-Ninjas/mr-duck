@@ -24,8 +24,8 @@ class CompanionAvatarTest {
   @Test
   fun duckAvatarAssetAndAttributionStayStable() {
     assertEquals("models/rubber_duck.glb", COMPANION_AVATAR_ASSET_PATH)
-    assertTrue(COMPANION_AVATAR_ATTRIBUTION.contains("J-Toastie"))
-    assertTrue(COMPANION_AVATAR_ATTRIBUTION.contains("CC BY"))
+    assertTrue(companionDuckGraphicsAttribution().contains("J-Toastie"))
+    assertTrue(companionDuckGraphicsAttribution().contains("CC BY"))
   }
 
   @Test
@@ -51,5 +51,18 @@ class CompanionAvatarTest {
 
     assertTrue(responding.bobHeight > idle.bobHeight)
     assertTrue(responding.wobbleDegrees > idle.wobbleDegrees)
+  }
+
+  @Test
+  fun thinkingWaveAlphaMovesAcrossCharacters() {
+    val first = companionThinkingWaveAlpha(index = 0, phase = 0f)
+    val second = companionThinkingWaveAlpha(index = 1, phase = 0f)
+    val later = companionThinkingWaveAlpha(index = 0, phase = 0.25f)
+
+    assertTrue(first in 0.45f..1f)
+    assertTrue(second in 0.45f..1f)
+    assertTrue(later in 0.45f..1f)
+    assertTrue(first != second)
+    assertTrue(first != later)
   }
 }

@@ -17,26 +17,29 @@
 package com.google.ai.edge.gallery.customtasks.companion
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.lifecycle.viewModelScope
-import com.google.ai.edge.gallery.data.MAX_IMAGE_COUNT
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.SAMPLE_RATE
 import com.google.ai.edge.gallery.data.SystemPromptRepository
 import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.proto.UserData
+import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageAudioClip
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageLoading
 import com.google.ai.edge.gallery.ui.common.chat.ChatSide
 import com.google.ai.edge.gallery.ui.llmchat.LlmChatViewModelBase
+import com.google.ai.edge.litertlm.Contents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private const val FRAME_SAMPLE_INTERVAL_MS = 3000L
+private const val TAG = "AGCompanionViewModel"
 
 data class CompanionCaptureUiState(
   val recording: Boolean = false,
@@ -53,20 +56,21 @@ constructor(
   userDataDataStore: DataStore<UserData>,
 ) : LlmChatViewModelBase(systemPromptRepository, userDataDataStore, null) {
   private val audioRecorder = CompanionAudioRecorder()
-  private val frameSampler =
-    CompanionFrameSampler<Bitmap>(
-      sampleEveryMs = FRAME_SAMPLE_INTERVAL_MS,
-      maxFrames = MAX_IMAGE_COUNT,
-    )
+  private val frameSampler = createCompanionFrameSampler<Bitmap>()
+  private val conversationHistory = CompanionConversationHistory()
 
   private val _captureUiState = MutableStateFlow(CompanionCaptureUiState())
   val captureUiState = _captureUiState.asStateFlow()
 
-  fun startCapture() {
+  fun startCapture(includeImages: Boolean = true) {
     if (_captureUiState.value.recording) {
       return
     }
-    frameSampler.clear()
+    if (includeImages) {
+      frameSampler.start()
+    } else {
+      frameSampler.clear()
+    }
     _captureUiState.value = CompanionCaptureUiState(recording = true)
     audioRecorder.start(viewModelScope) { amplitude ->
       _captureUiState.update { it.copy(amplitude = amplitude) }
@@ -86,46 +90,71 @@ constructor(
     }
   }
 
-  fun finishCaptureAndSend(model: Model) {
+  fun finishCaptureAndSend(model: Model, includeImages: Boolean = true) {
     if (!_captureUiState.value.recording) {
       return
     }
     _captureUiState.update { it.copy(recording = false, amplitude = 0) }
     viewModelScope.launch {
       val audioData = audioRecorder.stop()
-      val frames = frameSampler.frames
+      val frames = companionFramesForTurn(frameSampler.frames, imageContextEnabled = includeImages)
       if (audioData.isEmpty() && frames.isEmpty()) {
-        _captureUiState.update { it.copy(error = "I did not catch audio or camera frames.") }
+        _captureUiState.update { it.copy(error = companionEmptyCaptureMessage()) }
         return@launch
       }
       _captureUiState.update { it.copy(error = "") }
+      val audioMessage =
+        if (audioData.isEmpty()) {
+          null
+        } else {
+          ChatMessageAudioClip(
+            audioData = audioData,
+            sampleRate = SAMPLE_RATE,
+            side = ChatSide.USER,
+          )
+        }
+      val audioWav = audioMessage?.genByteArrayForWav()
+      val userHistoryMessage =
+        CompanionHistoryMessage.user(
+          text = COMPANION_HISTORY_USER_PLACEHOLDER,
+          audioWav = audioWav,
+          imagePng = frames.firstOrNull()?.toCompanionPngByteArray(),
+        )
+      val resetBeforeTurn = conversationHistory.trimToFit(userHistoryMessage)
+      val turnPrompt = companionPromptForTurn()
+      Log.d(
+        TAG,
+        companionTurnDebugLog(
+          prompt = turnPrompt,
+          frameSizes = frames.map { frame -> CompanionFrameDebugInfo(frame.width, frame.height) },
+          audioPcmBytes = audioData.size,
+          audioWavBytes = audioWav?.size ?: 0,
+          sampleRate = SAMPLE_RATE,
+          hiddenHistoryTurns = conversationHistory.turns.size,
+          resetBeforeTurn = resetBeforeTurn,
+        ),
+      )
+      if (resetBeforeTurn) {
+        resetRuntimeConversationToHiddenHistory(model = model)
+      }
       val visibleMessages = uiState.value.messagesByModel[model.name] ?: emptyList()
-      if (shouldClearCompanionVisibleMessagesBeforeTurn(visibleMessages)) {
-        clearAllMessages(model = model)
+      if (shouldInsertCompanionUserBoundaryBeforeTurn(visibleMessages)) {
+        addMessage(model = model, message = companionUserBoundaryMessage())
       }
       generateResponse(
         model = model,
-        input = companionPromptForTurn(),
+        input = turnPrompt,
         images = frames,
-        audioMessages =
-          if (audioData.isEmpty()) {
-            emptyList()
-          } else {
-            listOf(
-              ChatMessageAudioClip(
-                audioData = audioData,
-                sampleRate = SAMPLE_RATE,
-                side = ChatSide.USER,
-              )
-            )
-          },
-        onError = { message ->
+        audioMessages = if (audioMessage == null) emptyList() else listOf(audioMessage),
+        onError = {
           if (getLastMessage(model = model) is ChatMessageLoading) {
             removeLastMessage(model = model)
           }
-          _captureUiState.update { it.copy(error = message) }
+          _captureUiState.update { it.copy(error = companionResponseErrorMessage()) }
         },
-        onDone = { trimHistory(model = model) },
+        onDone = {
+          rememberSuccessfulTurn(model = model, userHistoryMessage = userHistoryMessage)
+        },
         allowThinking = true,
       )
     }
@@ -133,18 +162,54 @@ constructor(
 
   fun resetCompanionSession(task: Task, model: Model) {
     frameSampler.clear()
+    conversationHistory.clear()
     _captureUiState.value = CompanionCaptureUiState()
     resetSession(
       task = task,
       model = model,
+      systemInstruction = Contents.of(COMPANION_SYSTEM_PROMPT),
       supportImage = true,
       supportAudio = true,
     )
   }
 
-  private fun trimHistory(model: Model) {
+  private fun rememberSuccessfulTurn(model: Model, userHistoryMessage: CompanionHistoryMessage) {
+    val responseText =
+      companionVisibleResponseText(uiState.value.messagesByModel[model.name] ?: emptyList()) ?: return
+    val trimmed =
+      conversationHistory.addTurn(
+        CompanionConversationTurn(
+          user = userHistoryMessage,
+          agent = CompanionHistoryMessage.agent(text = responseText),
+        )
+      )
+    trimUiMessageCache(model = model)
+    if (trimmed) {
+      viewModelScope.launch { resetRuntimeConversationToHiddenHistory(model = model) }
+    }
+  }
+
+  private fun trimUiMessageCache(model: Model) {
     val overflow = (uiState.value.messagesByModel[model.name]?.size ?: 0) - COMPANION_MAX_HISTORY_MESSAGES
     repeat(overflow.coerceAtLeast(0)) { removeMessageAt(model = model, index = 0) }
+  }
+
+  private suspend fun resetRuntimeConversationToHiddenHistory(model: Model) {
+    setIsResettingSession(true)
+    try {
+      while (model.instance == null) {
+        delay(100)
+      }
+      model.runtimeHelper.resetConversation(
+        model = model,
+        supportImage = true,
+        supportAudio = true,
+        systemInstruction = Contents.of(COMPANION_SYSTEM_PROMPT),
+        initialMessages = conversationHistory.toLiteRtMessages(),
+      )
+    } finally {
+      setIsResettingSession(false)
+    }
   }
 
   override fun onCleared() {

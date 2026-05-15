@@ -17,8 +17,11 @@
 package com.google.ai.edge.gallery.customtasks.companion
 
 import android.Manifest
+import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.data.NumberSliderConfig
 import com.google.ai.edge.gallery.data.ModelDownloadStatus
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
+import com.google.ai.edge.gallery.data.ValueType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatus
 import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.common.chat.ChatMessageText
@@ -35,6 +38,105 @@ class CompanionScreenStateTest {
       listOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA),
       companionStartupPermissions(),
     )
+  }
+
+  @Test
+  fun settingsButtonShowsOnlyWhenModelReadyAndIdle() {
+    val readyDownload = ModelDownloadStatus(ModelDownloadStatusType.SUCCEEDED)
+    val readyInitialization = ModelInitializationStatus(ModelInitializationStatusType.INITIALIZED)
+
+    assertTrue(
+      shouldShowCompanionSettings(
+        downloadStatus = readyDownload,
+        initializationStatus = readyInitialization,
+        inProgress = false,
+        recording = false,
+        hasConfigs = true,
+      )
+    )
+    assertFalse(
+      shouldShowCompanionSettings(
+        downloadStatus = readyDownload,
+        initializationStatus = readyInitialization,
+        inProgress = true,
+        recording = false,
+        hasConfigs = true,
+      )
+    )
+    assertFalse(
+      shouldShowCompanionSettings(
+        downloadStatus = readyDownload,
+        initializationStatus = readyInitialization,
+        inProgress = false,
+        recording = true,
+        hasConfigs = true,
+      )
+    )
+    assertFalse(
+      shouldShowCompanionSettings(
+        downloadStatus = ModelDownloadStatus(ModelDownloadStatusType.IN_PROGRESS),
+        initializationStatus = readyInitialization,
+        inProgress = false,
+        recording = false,
+        hasConfigs = true,
+      )
+    )
+    assertFalse(
+      shouldShowCompanionSettings(
+        downloadStatus = readyDownload,
+        initializationStatus = readyInitialization,
+        inProgress = false,
+        recording = false,
+        hasConfigs = false,
+      )
+    )
+  }
+
+  @Test
+  fun configReinitializationOnlyWhenChangedConfigRequiresIt() {
+    val reinitConfig =
+      NumberSliderConfig(
+        key = ConfigKeys.MAX_TOKENS,
+        sliderMin = 1f,
+        sliderMax = 10f,
+        defaultValue = 4f,
+        valueType = ValueType.INT,
+        needReinitialization = true,
+      )
+    val liveConfig =
+      NumberSliderConfig(
+        key = ConfigKeys.TEMPERATURE,
+        sliderMin = 0f,
+        sliderMax = 2f,
+        defaultValue = 1f,
+        valueType = ValueType.FLOAT,
+        needReinitialization = false,
+      )
+
+    assertTrue(
+      companionConfigNeedsReinitialization(
+        configs = listOf(reinitConfig, liveConfig),
+        oldValues = mapOf("Max tokens" to 4, "Temperature" to 1f),
+        newValues = mapOf("Max tokens" to 8, "Temperature" to 1f),
+      )
+    )
+    assertFalse(
+      companionConfigNeedsReinitialization(
+        configs = listOf(reinitConfig, liveConfig),
+        oldValues = mapOf("Max tokens" to 4, "Temperature" to 1f),
+        newValues = mapOf("Max tokens" to 4, "Temperature" to 1.2f),
+      )
+    )
+  }
+
+  @Test
+  fun imageContextToggleControlsCameraCaptureAndTurnFrames() {
+    assertTrue(shouldCaptureCompanionCameraFrame(recording = true, imageContextEnabled = true))
+    assertFalse(shouldCaptureCompanionCameraFrame(recording = true, imageContextEnabled = false))
+    assertFalse(shouldCaptureCompanionCameraFrame(recording = false, imageContextEnabled = true))
+
+    assertEquals(listOf("frame"), companionFramesForTurn(listOf("frame"), imageContextEnabled = true))
+    assertEquals(emptyList<String>(), companionFramesForTurn(listOf("frame"), imageContextEnabled = false))
   }
 
   @Test
@@ -70,8 +172,55 @@ class CompanionScreenStateTest {
 
   @Test
   fun holdButtonTextReflectsRecordingState() {
-    assertEquals("Hold to talk", companionHoldButtonLabel(recording = false))
-    assertEquals("Release to send", companionHoldButtonLabel(recording = true))
+    assertEquals("Hold to tell the duck", companionHoldButtonLabel(recording = false))
+    assertEquals("Release. The duck has notes.", companionHoldButtonLabel(recording = true))
+  }
+
+  @Test
+  fun idleAndBusyLabelsStayCuteAndWitty() {
+    assertEquals("Tell the tiny duck what's on your mind.", companionIdleGreeting())
+    assertEquals("The duck is forming an opinion...", companionRespondingLabel())
+    assertEquals("Start over", companionResetLabel())
+  }
+
+  @Test
+  fun duckGraphicsAttributionUsesFooterWording() {
+    assertEquals(
+      "Duck graphics: Rubber Duck by J-Toastie, CC BY via Poly Pizza",
+      companionDuckGraphicsAttribution(),
+    )
+  }
+
+  @Test
+  fun setupLabelsAvoidTechnicalModelLanguage() {
+    assertEquals("Hatching tiny thoughts...", companionDownloadStatusLabel(null))
+    assertEquals(
+      "Tiny brain installed. Ready to quack away.",
+      companionDownloadStatusLabel(ModelDownloadStatus(ModelDownloadStatusType.SUCCEEDED)),
+    )
+    assertEquals(
+      "The duck got distracted.",
+      companionDownloadStatusLabel(ModelDownloadStatus(ModelDownloadStatusType.FAILED)),
+    )
+    assertEquals(
+      "Hatching tiny thoughts...",
+      companionDownloadStatusLabel(ModelDownloadStatus(ModelDownloadStatusType.IN_PROGRESS)),
+    )
+    assertEquals(
+      "Hatching tiny thoughts...",
+      companionDownloadStatusLabel(ModelDownloadStatus(ModelDownloadStatusType.UNZIPPING)),
+    )
+    assertEquals("Ready to judge kindly.", companionInitializationStatusLabel(ModelInitializationStatus(ModelInitializationStatusType.INITIALIZED)))
+    assertEquals("The duck fell over.", companionInitializationStatusLabel(ModelInitializationStatus(ModelInitializationStatusType.ERROR)))
+    assertEquals("Fluffing the braincells...", companionInitializationStatusLabel(null))
+    assertEquals("Try again", companionDownloadRetryLabel())
+    assertEquals("Prop the duck up", companionInitializeRetryLabel())
+  }
+
+  @Test
+  fun captureErrorsAreCuteAndWitty() {
+    assertEquals("I heard nothing. Tiny tragedy.", companionEmptyCaptureMessage())
+    assertEquals("My braincell slipped. Again, but cuter.", companionResponseErrorMessage())
   }
 
   @Test
@@ -80,30 +229,6 @@ class CompanionScreenStateTest {
       companionHoldButtonDiameterDp(recording = false),
       companionHoldButtonDiameterDp(recording = true),
     )
-  }
-
-  @Test
-  fun attentionGlowOnlyAppearsSubtlyWhileRecording() {
-    assertEquals(0f, companionAttentionGlowAlpha(recording = false, amplitude = 32767), 0.001f)
-
-    val quiet = companionAttentionGlowAlpha(recording = true, amplitude = 0)
-    val loud = companionAttentionGlowAlpha(recording = true, amplitude = 32767)
-
-    assertTrue(quiet > 0f)
-    assertTrue(loud > quiet)
-    assertTrue(loud >= 0.34f)
-    assertTrue(loud <= 0.42f)
-  }
-
-  @Test
-  fun listeningBorderPulsesOnlyWhileRecording() {
-    assertEquals(0f, companionListeningBorderAlpha(recording = false, pulse = 1f), 0.001f)
-
-    val dim = companionListeningBorderAlpha(recording = true, pulse = 0f)
-    val bright = companionListeningBorderAlpha(recording = true, pulse = 1f)
-
-    assertTrue(dim > 0f)
-    assertTrue(bright > dim)
   }
 
   @Test
@@ -119,11 +244,41 @@ class CompanionScreenStateTest {
   }
 
   @Test
-  fun existingVisibleMessagesAreClearedBeforeNewTurn() {
+  fun visibleResponseIgnoresPreviousAgentTextWhenLatestMessageIsNotAgentText() {
+    val messages =
+      listOf(
+        ChatMessageText(content = "old", side = ChatSide.AGENT),
+        ChatMessageText(content = "user", side = ChatSide.USER),
+      )
+
+    assertEquals(null, companionVisibleResponseText(messages))
+  }
+
+  @Test
+  fun existingMessagesAreRetainedBeforeNewTurnForHiddenHistory() {
     val messages = listOf(ChatMessageText(content = "previous", side = ChatSide.AGENT))
 
-    assertTrue(shouldClearCompanionVisibleMessagesBeforeTurn(messages))
+    assertFalse(shouldClearCompanionVisibleMessagesBeforeTurn(messages))
     assertFalse(shouldClearCompanionVisibleMessagesBeforeTurn(emptyList()))
+  }
+
+  @Test
+  fun userBoundaryIsInsertedForEveryCapturedTurn() {
+    assertTrue(shouldInsertCompanionUserBoundaryBeforeTurn(emptyList()))
+    assertTrue(
+      shouldInsertCompanionUserBoundaryBeforeTurn(
+        listOf(ChatMessageText(content = "previous", side = ChatSide.AGENT))
+      )
+    )
+    assertTrue(
+      shouldInsertCompanionUserBoundaryBeforeTurn(
+        listOf(ChatMessageText(content = "hidden user turn", side = ChatSide.USER))
+      )
+    )
+
+    val boundary = companionUserBoundaryMessage()
+    assertEquals(ChatSide.USER, boundary.side)
+    assertEquals(COMPANION_HISTORY_USER_PLACEHOLDER, boundary.content)
   }
 
   @Test

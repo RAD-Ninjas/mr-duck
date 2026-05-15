@@ -80,5 +80,19 @@ fun CompanionApp(
     onRetryDownload = { modelManagerViewModel.downloadModel(task = task, model = model) },
     onRetryInitialize = { modelManagerViewModel.initializeModel(context = context, task = task, model = model, force = true) },
     onReset = { viewModel.resetCompanionSession(task = task, model = model) },
+    onConfigChanged = { oldValues, newValues ->
+      model.prevConfigValues = oldValues
+      model.configValues = newValues
+      modelManagerViewModel.updateConfigValuesUpdateTrigger()
+      if (companionConfigNeedsReinitialization(model.configs, oldValues, newValues)) {
+        modelManagerViewModel.initializeModel(
+          context = context,
+          task = task,
+          model = model,
+          force = true,
+          onDone = { viewModel.resetCompanionSession(task = task, model = model) },
+        )
+      }
+    },
   )
 }

@@ -43,4 +43,16 @@ class CompanionFrameSamplerTest {
 
     assertEquals(listOf("first", "second"), sampler.frames)
   }
+
+  @Test
+  fun companionSamplerWaitsOneSecondAndKeepsOneFrame() {
+    val sampler = createCompanionFrameSampler<String>()
+
+    sampler.start(nowMs = 0L)
+
+    assertFalse(sampler.maybeSample(frame = "too early", nowMs = COMPANION_FRAME_CAPTURE_DELAY_MS - 1L))
+    assertTrue(sampler.maybeSample(frame = "only frame", nowMs = COMPANION_FRAME_CAPTURE_DELAY_MS))
+    assertFalse(sampler.maybeSample(frame = "extra", nowMs = COMPANION_FRAME_CAPTURE_DELAY_MS * 2L))
+    assertEquals(listOf("only frame"), sampler.frames)
+  }
 }
