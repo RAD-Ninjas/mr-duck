@@ -1,0 +1,1 @@
+ADB_MDNS_AUTO_CONNECT=0 timeout 8s "$HOME/Android/Sdk/platform-tools/adb" pair 192.168.1.98:46871 909902

@@ -17,28 +17,7 @@
 package com.google.ai.edge.gallery
 
 import android.app.Application
-import com.google.ai.edge.gallery.data.DataStoreRepository
-import com.google.ai.edge.gallery.notifications.NotificationScheduleManager
-import com.google.ai.edge.gallery.ui.theme.ThemeSettings
-import com.google.firebase.FirebaseApp
 import dagger.hilt.android.HiltAndroidApp
-import javax.inject.Inject
 
 @HiltAndroidApp
-class GalleryApplication : Application() {
-
-  @Inject lateinit var dataStoreRepository: DataStoreRepository
-  @Inject lateinit var notificationScheduleManager: NotificationScheduleManager
-
-  override fun onCreate() {
-    super.onCreate()
-    // Initialize the notification schedule manager to load the scheduled notifications from the
-    // disk.
-    notificationScheduleManager.initialize()
-
-    // Load saved theme.
-    ThemeSettings.themeOverride.value = dataStoreRepository.readTheme()
-
-    FirebaseApp.initializeApp(this)
-  }
-}
+class GalleryApplication : Application()

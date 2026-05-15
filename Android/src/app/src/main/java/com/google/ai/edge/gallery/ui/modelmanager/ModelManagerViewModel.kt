@@ -30,6 +30,7 @@ import com.google.ai.edge.gallery.common.SystemPromptHelper
 import com.google.ai.edge.gallery.common.getJsonResponse
 import com.google.ai.edge.gallery.common.isAICoreSupported
 import com.google.ai.edge.gallery.customtasks.common.CustomTask
+import com.google.ai.edge.gallery.customtasks.companion.COMPANION_TASK_ID
 import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.Category
@@ -227,7 +228,7 @@ constructor(
   }
 
   fun getActiveCustomTasks(): List<CustomTask> {
-    return customTasks.toList()
+    return customTasks.filter { it.task.id == COMPANION_TASK_ID }
   }
 
   fun getSelectedModel(): Model? {
@@ -1027,6 +1028,25 @@ constructor(
       } catch (e: Exception) {
         e.printStackTrace()
       }
+    }
+  }
+
+  fun loadCompanionModelOnly() {
+    _uiState.update { it.copy(loadingModelAllowlist = true, loadingModelAllowlistError = "") }
+
+    viewModelScope.launch(Dispatchers.IO) {
+      _allowlistModels.clear()
+      processTasks()
+      val curTasks = getActiveCustomTasks().map { it.task }
+      _uiState.update {
+        createUiState()
+          .copy(
+            loadingModelAllowlist = false,
+            tasks = curTasks,
+            tasksByCategory = groupTasksByCategory(),
+          )
+      }
+      processPendingDownloads()
     }
   }
 

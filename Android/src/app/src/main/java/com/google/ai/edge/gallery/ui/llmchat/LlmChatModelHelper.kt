@@ -26,7 +26,6 @@ import com.google.ai.edge.gallery.data.DEFAULT_MAX_TOKEN
 import com.google.ai.edge.gallery.data.DEFAULT_TEMPERATURE
 import com.google.ai.edge.gallery.data.DEFAULT_TOPK
 import com.google.ai.edge.gallery.data.DEFAULT_TOPP
-import com.google.ai.edge.gallery.data.DEFAULT_VISION_ACCELERATOR
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelCapability
 import com.google.ai.edge.gallery.runtime.CleanUpListener
@@ -82,7 +81,7 @@ object LlmChatModelHelper : LlmModelHelper {
     val visionAccelerator =
       model.getStringConfigValue(
         key = ConfigKeys.VISION_ACCELERATOR,
-        defaultValue = DEFAULT_VISION_ACCELERATOR.label,
+        defaultValue = model.visionAccelerator.label,
       )
     val visionBackend =
       when (visionAccelerator) {
